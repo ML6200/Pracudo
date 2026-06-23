@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="hu">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pracudo — Pseudokód gyakorló</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Pra<span>cudo</span></h1>
+        <nav>
+          <button id="nav-library" class="active">Könyvtár</button>
+          <button id="nav-view">Megtekintés</button>
+          <button id="nav-quiz">Gyakorlás</button>
+          <button id="nav-stats">Haladás</button>
+          <button id="nav-settings" title="Beállítások">⚙</button>
+        </nav>
+      </header>
+
+      <!-- Library View -->
+      <div id="view-library" class="view active">
+        <div class="library-actions">
+          <button id="btn-add-text" class="btn btn-primary">+ Szöveg</button>
+          <button id="btn-add-ocr" class="btn">+ Kép (OCR)</button>
+        </div>
+        <div id="algo-list"></div>
+      </div>
+
+      <!-- View Algorithm -->
+      <div id="view-algo" class="view">
+        <div class="view-header">
+          <button class="btn back-btn" id="btn-back-view">← Vissza</button>
+          <h2 id="view-algo-title"></h2>
+          <button class="btn" id="btn-edit-algo">Szerkesztés</button>
+          <button class="btn toggle-btn" id="btn-toggle-alias">← ∧ ¬</button>
+        </div>
+        <div id="algo-render"></div>
+        <div id="algo-edit" style="display:none">
+          <textarea id="algo-edit-input" class="quiz-textarea" spellcheck="false"></textarea>
+          <div class="alias-hint">
+            Automatikus csere: <code>&lt;-</code> → ←&nbsp;&nbsp;
+            <code>^</code> → ∧&nbsp;&nbsp;
+            <code>!</code> → ¬&nbsp;&nbsp;
+            <code>||</code> → ∨
+          </div>
+          <div class="quiz-actions">
+            <button id="btn-format-edit" class="btn">Formázás</button>
+            <button id="btn-save-edit" class="btn btn-primary">Mentés</button>
+            <button id="btn-cancel-edit" class="btn">Mégse</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats View -->
+      <div id="view-stats" class="view">
+        <h2 style="margin-bottom:1rem">Haladás</h2>
+        <div id="stats-content"></div>
+      </div>
+
+      <!-- Quiz View -->
+      <div id="view-quiz" class="view">
+        <div class="view-header">
+          <button class="btn back-btn" id="btn-back-quiz">← Vissza</button>
+          <h2 id="quiz-algo-title"></h2>
+        </div>
+
+        <div id="quiz-setup" class="quiz-setup">
+          <div class="quiz-mode-select">
+            <div class="quiz-mode-card selected" data-mode="blanks">
+              <h3>Kitöltős</h3>
+              <p>Egyes részek ki vannak hagyva, töltsd ki!</p>
+            </div>
+            <div class="quiz-mode-card" data-mode="reproduce">
+              <h3>Visszaadás</h3>
+              <p>Írd le az egész algoritmust emlékezetből</p>
+            </div>
+          </div>
+
+          <div id="difficulty-wrapper" class="difficulty-control">
+            <label>Nehézség:</label>
+            <input type="range" id="difficulty" min="20" max="80" value="40" />
+            <span id="difficulty-value">40%</span>
+          </div>
+
+          <button id="btn-start-quiz" class="btn btn-primary">Kezdés</button>
+        </div>
+
+        <div id="quiz-area" class="quiz-area" style="display:none">
+          <div id="quiz-content"></div>
+          <div class="alias-hint" id="alias-hint">
+            Gyorsbillentyűk: <code>&lt;-</code> → ←&nbsp;&nbsp;
+            <code>^</code> → ∧&nbsp;&nbsp;
+            <code>!</code> → ¬&nbsp;&nbsp;
+            <code>||</code> → ∨&nbsp;&nbsp;
+            <code>&gt;=</code> → ≥&nbsp;&nbsp;
+            <code>&lt;=</code> → ≤
+          </div>
+          <div class="quiz-actions">
+            <button id="btn-check" class="btn btn-primary">Ellenőrzés</button>
+            <button id="btn-retry" class="btn" style="display:none">Újra</button>
+          </div>
+        </div>
+
+        <div id="quiz-result-area" style="display:none">
+          <div id="quiz-score" class="quiz-score"></div>
+          <div id="quiz-result-detail"></div>
+          <div class="quiz-actions">
+            <button id="btn-retry-result" class="btn btn-primary">Újra</button>
+            <button id="btn-back-result" class="btn">Vissza a könyvtárba</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Algorithm Modal -->
+    <div id="modal-add" class="modal-overlay" style="display:none">
+      <div class="modal">
+        <h2 id="modal-title">Algoritmus hozzáadása</h2>
+        <div id="modal-text-input">
+          <textarea id="algo-input" placeholder="Illeszd be a pseudokódot ide...&#10;&#10;Példa:&#10;2.17. Algoritmus Szétválogatás&#10;Bemenet: x – T tömb, n – egész&#10;Kimenet: x – T tömb, db – egész&#10;1: függvény SZÉTVÁLOGAT(...)&#10;2:     bal <- 1&#10;..."></textarea>
+          <div class="alias-hint">
+            Automatikus csere: <code>&lt;-</code> → ←&nbsp;&nbsp;
+            <code>^</code> → ∧&nbsp;&nbsp;
+            <code>!</code> → ¬&nbsp;&nbsp;
+            <code>||</code> → ∨
+          </div>
+          <button id="btn-format-text" class="btn" style="margin-top:0.5rem">Formázás</button>
+        </div>
+        <div id="modal-ocr-input" style="display:none">
+          <div class="ocr-drop-zone" id="ocr-drop-zone">
+            <p>Húzd ide a képet vagy kattints a tallózáshoz</p>
+            <input type="file" id="ocr-file-input" accept="image/*" />
+          </div>
+          <div id="ocr-preview" class="ocr-preview" style="display:none"></div>
+          <div id="ocr-progress" class="ocr-progress" style="display:none">
+            <p id="ocr-status">Feldolgozás...</p>
+            <div class="progress-bar">
+              <div class="progress-bar-fill" id="ocr-progress-bar" style="width:0%"></div>
+            </div>
+          </div>
+          <div id="ocr-result" style="display:none">
+            <p style="margin-bottom:0.5rem;color:var(--text-muted);font-size:0.85rem">Felismert szöveg (szerkeszthető):</p>
+            <textarea id="ocr-text-output"></textarea>
+            <button id="btn-format-ocr" class="btn" style="margin-top:0.5rem">Formázás</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-modal-cancel" class="btn">Mégse</button>
+          <button id="btn-modal-save" class="btn btn-primary">Mentés</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="modal-settings" class="modal-overlay" style="display:none">
+      <div class="modal">
+        <h2>Beállítások</h2>
+
+        <h3 class="settings-section-title">Operátor aliasok</h3>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem">
+          Gépelés közben az alias automatikusan a célkarakterré alakul.
+        </p>
+        <div id="alias-table-container"></div>
+        <div style="margin-top:0.75rem">
+          <button id="btn-alias-add" class="btn">+ Új sor</button>
+        </div>
+
+        <hr style="border-color:var(--border);margin:1.5rem 0">
+        <h3 class="settings-section-title">Statisztikák</h3>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">
+          Az összes gyakorlási eredmény és haladási adat törlése.
+        </p>
+        <button id="btn-stats-reset" class="btn btn-danger">Statisztikák törlése</button>
+
+        <div class="modal-footer">
+          <button id="btn-alias-reset" class="btn btn-danger">Aliasok alapértelmezett</button>
+          <button id="btn-settings-cancel" class="btn">Mégse</button>
+          <button id="btn-settings-save" class="btn btn-primary">Mentés</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
