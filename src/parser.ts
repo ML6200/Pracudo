@@ -132,20 +132,26 @@ export function parseAlgorithm(text: string): Algorithm {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const titleMatch = trimmed.match(/^(\d+\.\d+\.?)\s*(?:Algoritmus\s+)?(.*)$/i);
-    if (titleMatch && !algo.title) {
-      algo.number = titleMatch[1];
-      algo.title = titleMatch[2];
+    const numberedTitleMatch = trimmed.match(/^(\d+\.\d+\.?)\s*(?:Algoritmus\s+)?(.*)$/i);
+    if (numberedTitleMatch && !algo.title) {
+      algo.number = numberedTitleMatch[1];
+      algo.title = numberedTitleMatch[2];
       continue;
     }
 
-    const inputMatch = trimmed.match(/^Bemenet:\s*(.*)$/i);
+    const plainTitleMatch = trimmed.match(/^Algoritmus\s+(.+)$/i);
+    if (plainTitleMatch && !algo.title) {
+      algo.title = plainTitleMatch[1];
+      continue;
+    }
+
+    const inputMatch = trimmed.match(/^Bemenet\s*:\s*(.*)$/i);
     if (inputMatch) {
       algo.inputs = inputMatch[1];
       continue;
     }
 
-    const outputMatch = trimmed.match(/^Kimenet:\s*(.*)$/i);
+    const outputMatch = trimmed.match(/^Kimenet\s*:\s*(.*)$/i);
     if (outputMatch) {
       algo.outputs = outputMatch[1];
       continue;
@@ -190,8 +196,10 @@ export function parseAlgorithm(text: string): Algorithm {
 export function algorithmToText(algo: Algorithm): string {
   const parts: string[] = [];
 
-  if (algo.number || algo.title) {
+  if (algo.number && algo.title) {
     parts.push(`${algo.number} Algoritmus ${algo.title}`);
+  } else if (algo.title) {
+    parts.push(`Algoritmus ${algo.title}`);
   }
   if (algo.inputs) parts.push(`Bemenet: ${algo.inputs}`);
   if (algo.outputs) parts.push(`Kimenet: ${algo.outputs}`);
