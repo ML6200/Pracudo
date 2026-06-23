@@ -26,7 +26,7 @@ Vanilla TypeScript + HTML, no framework. Single-page app with three views (libra
 ### Module Responsibilities
 
 - **`parser.ts`** — tokenizer with Hungarian keyword set and compound keywords (`függvény vége`, `ciklus amíg`). Produces `Algorithm` AST with `Token[]` per line. `algorithmToText()` serializes back to plain text.
-- **`aliases.ts`** — mutable operator alias system backed by localStorage. `applyAliases()` converts ASCII to Unicode (`<-` → `←`). `reverseAliases()` goes the other direction. `setupLiveAliasing()` attaches input listeners to textareas. `normalizeForComparison()` normalizes all dash variants for quiz tolerance.
+- **`aliases.ts`** — mutable operator alias system backed by localStorage. `applyAliases()` converts ASCII to Unicode (`<-` → `←`). `reverseAliases()` goes the other direction. `setupLiveAliasing()` attaches input listeners to textareas with prefix-aware deferred replacement — aliases like `!` that are prefixes of longer aliases like `!=` are not replaced until the next keystroke resolves the ambiguity. `normalizeForComparison()` normalizes all dash variants for quiz tolerance.
 - **`formatter.ts`** — auto-indentation via opener/closer pattern matching. Openers use negative lookahead to avoid matching closers (e.g., `^ciklus\b(?!.*\bvége\b)`). Also normalizes operator spacing.
 - **`ocr.ts`** — Tesseract.js with Hungarian language pack. `postProcessOCR()` has a 5-phase pipeline: character-level arrow fixes, logical operator recovery, keyword accent recovery, context-aware assignment arrow detection, bracket misread fixes.
 - **`renderer.ts`** — converts `Algorithm` AST to styled HTML. `renderIOLine()` uses single-pass tokenize-then-render to avoid double-matching inside HTML tags.

@@ -24,6 +24,7 @@ const STORAGE_KEY = 'pracudo_aliases';
 
 let activeAliases: AliasEntry[] = [];
 let replacementPairs: [string, string][] = [];
+let prefixAliases: Set<string> = new Set();
 
 function rebuildPairs() {
   replacementPairs = [];
@@ -33,6 +34,17 @@ function rebuildPairs() {
     }
   }
   replacementPairs.sort((a, b) => b[0].length - a[0].length);
+
+  prefixAliases = new Set();
+  const allAliasStrings = replacementPairs.map(([a]) => a);
+  for (const alias of allAliasStrings) {
+    for (const longer of allAliasStrings) {
+      if (longer.length > alias.length && longer.startsWith(alias)) {
+        prefixAliases.add(alias);
+        break;
+      }
+    }
+  }
 }
 
 export function loadAliases(): AliasEntry[] {
@@ -96,6 +108,12 @@ export function setupLiveAliasing(textarea: HTMLTextAreaElement): void {
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const original = textarea.value;
+
+    const beforeCursor = original.substring(0, start);
+    for (const alias of prefixAliases) {
+      if (beforeCursor.endsWith(alias)) return;
+    }
+
     const replaced = applyAliases(original);
 
     if (replaced !== original) {
