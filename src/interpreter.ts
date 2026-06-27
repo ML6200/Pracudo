@@ -53,6 +53,13 @@ interface FunctionDef {
   params: InputParam[];
 }
 
+interface CallFrame {
+  returnPc: number;
+  returnEnv: Map<string, Value>;
+  returnEndPc: number;
+  assignTarget?: { target: string; index: Expr | null };
+}
+
 // ===== Expression Tokenizer =====
 
 interface ExprToken {
@@ -664,6 +671,7 @@ export class Interpreter {
   private classified: ClassifiedLine[];
   private jumps: Map<number, JumpInfo>;
   private functions: Map<string, FunctionDef>;
+  private callStack: CallFrame[];
   private env: Map<string, Value>;
   private pc: number;
   private startPc: number;
@@ -682,6 +690,7 @@ export class Interpreter {
     this.classified = algo.lines.map((l) => classifyLine(l.raw));
     this.jumps = buildJumpTable(this.classified);
     this.functions = this.buildFunctionTable(this.classified);
+    this.callStack = [];
     this.env = new Map();
     this.history = [];
     this.forState = new Map();
@@ -694,6 +703,7 @@ export class Interpreter {
     const headerIdx = this.classified.findIndex(
       (c) => c.kind === "func_header",
     );
+
     if (headerIdx >= 0) {
       this.funcParams = (
         this.classified[headerIdx] as Extract<
@@ -701,15 +711,51 @@ export class Interpreter {
           { kind: "func_header" }
         >
       ).params;
+    }
+
+    let currentTopLevelStart: number | null = null;
+    const topLevelRanges: Array<{ start: number; end: number }> = [];
+    let funcDepth = 0;
+
+    for (let i = 0; i < this.classified.length; i++) {
+      const cl = this.classified[i];
+      if (cl.kind === "func_header") {
+        if (funcDepth === 0 && currentTopLevelStart !== null) {
+          topLevelRanges.push({
+            start: currentTopLevelStart,
+            end: i - 1,
+          });
+          currentTopLevelStart = null;
+        }
+        funcDepth++;
+      } else if (cl.kind === "func_end") {
+        funcDepth = Math.max(0, funcDepth - 1);
+      } else if (funcDepth === 0) {
+        if (currentTopLevelStart === null) currentTopLevelStart = i;
+      }
+    }
+
+    if (currentTopLevelStart !== null) {
+      topLevelRanges.push({
+        start: currentTopLevelStart,
+        end: this.classified.length - 1,
+      });
+    }
+
+    if (topLevelRanges.length > 0) {
+      this.startPc = topLevelRanges[0].start;
+      this.endPc = topLevelRanges[topLevelRanges.length - 1].end;
+    } else if (headerIdx >= 0) {
       this.startPc = headerIdx + 1;
       const endIdx = this.classified.findIndex(
         (c, i) => i > headerIdx && c.kind === "func_end",
       );
-      this.endPc = endIdx >= 0 ? endIdx : this.lines.length;
+      this.endPc = endIdx >= 0 ? endIdx : this.lines.length - 1;
     } else {
       this.startPc = 0;
-      this.endPc = this.lines.length;
+      this.endPc = this.lines.length - 1;
     }
+
     this.pc = this.startPc;
   }
 
@@ -737,17 +783,31 @@ export class Interpreter {
     return functions;
   }
 
-  private callUserFunction(name: string, args: Value[]): Value {
-    const fn = this.functions.get(name.toUpperCase());
-    if (!fn) throw new Error(`Ismeretlen függvény: ${name}`);
-    if (args.length !== fn.params.length)
-      throw new Error(`Hibás paraméterszám: ${name} vár ${fn.params.length}-t`);
+  private findNextExecutableLine(from: number): number {
+    for (let i = from; i < this.classified.length; i++) {
+      const kind = this.classified[i].kind;
+      if (kind !== "func_header" && kind !== "func_end") return i;
+    }
+    return this.classified.length;
+  }
 
-    const savedEnv = this.env;
-    const savedPc = this.pc;
-    const savedEndPc = this.endPc;
-    const savedFinished = this._finished;
-    const savedReturnValue = this._returnValue;
+  private enterFunction(
+    fn: FunctionDef,
+    args: Value[],
+    assignTarget?: { target: string; index: Expr | null },
+    returnToCurrentLine = false,
+  ): void {
+    if (args.length !== fn.params.length)
+      throw new Error(`Hibás paraméterszám: ${fn.name} vár ${fn.params.length}-t`);
+
+    this.callStack.push({
+      returnPc: returnToCurrentLine
+        ? this.pc
+        : this.findNextExecutableLine(this.pc + 1),
+      returnEnv: this.env,
+      returnEndPc: this.endPc,
+      assignTarget,
+    });
 
     this.env = new Map<string, Value>();
     for (let i = 0; i < fn.params.length; i++) {
@@ -755,23 +815,6 @@ export class Interpreter {
     }
     this.pc = fn.start;
     this.endPc = fn.end;
-    this._finished = false;
-    this._returnValue = null;
-
-    while (!this._finished && !this._error && this.pc < this.endPc) {
-      const cl = this.classified[this.pc];
-      this.executeLine(cl, this.pc);
-    }
-
-    const result = this._returnValue;
-
-    this.env = savedEnv;
-    this.pc = savedPc;
-    this.endPc = savedEndPc;
-    this._finished = savedFinished;
-    this._returnValue = savedReturnValue;
-
-    return result === null ? 0 : result;
   }
 
   setInputs(inputs: Record<string, Value>): void {
@@ -815,10 +858,19 @@ export class Interpreter {
 
   step(): ExecutionStep | null {
     if (this._finished || this._error) return null;
-    if (this.pc < 0 || this.pc >= this.endPc) {
-      this._finished = true;
-      return null;
+
+    if (this.pc < 0 || this.pc > this.endPc) {
+      if (this.callStack.length > 0) {
+        const frame = this.callStack.pop()!;
+        this.env = frame.returnEnv;
+        this.endPc = frame.returnEndPc;
+        this.pc = frame.returnPc;
+      } else {
+        this._finished = true;
+        return null;
+      }
     }
+
     if (this.stepCount++ > this.maxSteps) {
       this._error = "Végtelen ciklus! (maximum 10000 lépés)";
       this._finished = true;
@@ -856,6 +908,19 @@ export class Interpreter {
   private executeLine(cl: ClassifiedLine, pc: number): string {
     switch (cl.kind) {
       case "assign": {
+        if (
+          cl.value.kind === "call" &&
+          this.functions.has(cl.value.name.toUpperCase())
+        ) {
+          const fn = this.functions.get(cl.value.name.toUpperCase())!;
+          const argVals = cl.value.args.map((a) => this.evalExpr(a));
+          this.enterFunction(fn, argVals, {
+            target: cl.target,
+            index: cl.index,
+          });
+          return `${fn.name} belépés`;
+        }
+
         const val = this.evalExpr(cl.value);
         if (cl.index !== null) {
           const idx = asNumber(this.evalExpr(cl.index));
@@ -966,9 +1031,38 @@ export class Interpreter {
       }
 
       case "return": {
-        this._returnValue = this.evalExpr(cl.value);
-        this._finished = true;
-        return `vissza ${formatValue(this._returnValue)}`;
+        const returnValue = this.evalExpr(cl.value);
+        if (this.callStack.length === 0) {
+          this._returnValue = returnValue;
+          this._finished = true;
+          return `vissza ${formatValue(this._returnValue)}`;
+        }
+
+        const frame = this.callStack.pop()!;
+        const savedReturn = returnValue;
+        this.env = frame.returnEnv;
+        this.endPc = frame.returnEndPc;
+        this.pc = frame.returnPc;
+
+        if (frame.assignTarget) {
+          const { target, index } = frame.assignTarget;
+          if (index !== null) {
+            const idx = asNumber(this.evalExpr(index));
+            let arr = this.env.get(target);
+            if (arr === undefined) {
+              arr = [];
+              this.env.set(target, arr);
+            }
+            if (!Array.isArray(arr)) throw new Error(`${target} nem tömb`);
+            while ((arr as Value[]).length < idx) (arr as Value[]).push(0);
+            (arr as Value[])[idx - 1] = savedReturn;
+          } else {
+            this.env.set(target, savedReturn);
+          }
+        }
+
+        this._returnValue = savedReturn;
+        return `vissza ${formatValue(savedReturn)}`;
       }
 
       case "call_stmt": {
@@ -979,9 +1073,9 @@ export class Interpreter {
         }
         const argVals = cl.args.map((a) => this.evalExpr(a));
         if (this.functions.has(cl.name.toUpperCase())) {
-          this.callUserFunction(cl.name, argVals);
-          this.pc++;
-          return `${cl.name}() végrehajtva`;
+          const fn = this.functions.get(cl.name.toUpperCase())!;
+          this.enterFunction(fn, argVals);
+          return `${fn.name} belépés`;
         }
         this.pc++;
         return `${cl.name}(${argVals.map(formatValue).join(", ")})`;
@@ -1125,19 +1219,14 @@ export class Interpreter {
     if (this.env.has(name)) {
       const rule = this.env.get(name);
       if (typeof rule === "string") {
-        // Létrehozunk egy átmeneti 'e' (elem) változót a futtatáshoz
         const oldE = this.env.get("e");
         this.env.set("e", args[0]);
 
         try {
-          // Dinamikusan fát építünk a stringből és futtatjuk
           const expr = parseExpression(rule);
           const result = this.evalExpr(expr);
-
-          // Takarítás az eredeti állapotra
           if (oldE !== undefined) this.env.set("e", oldE);
           else this.env.delete("e");
-
           return result;
         } catch (err) {
           throw new Error(
@@ -1147,10 +1236,28 @@ export class Interpreter {
       }
     }
 
-    // 2. USER DEFINED FUNCTIONS
     const upper = name.toUpperCase();
     if (this.functions.has(upper)) {
-      return this.callUserFunction(name, args);
+      const fn = this.functions.get(upper)!;
+      const initialDepth = this.callStack.length;
+      const previousReturnValue = this._returnValue;
+      this._returnValue = null;
+      this.enterFunction(fn, args, undefined, true);
+
+      while (
+        !this._finished &&
+        !this._error &&
+        this.callStack.length > initialDepth
+      ) {
+        const step = this.step();
+        if (!step) break;
+      }
+
+      const result = this._returnValue;
+      this._returnValue = previousReturnValue;
+      if (this._error) throw new Error(this._error);
+      if (result === null) throw new Error(`A függvény nem adott visszatérési értéket: ${name}`);
+      return result;
     }
 
     // 3. BEÉPÍTETT FÜGGVÉNYEK
