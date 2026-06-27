@@ -99,7 +99,7 @@ export function reverseAliases(text: string): string {
 export function normalizeForComparison(text: string): string {
   let result = applyAliases(text);
   result = result.replace(/[−–—]/g, '-');
-  result = result.replace(/\s+/g, ' ').trim();
+  result = result.replace(/\s+/g, '');
   return result;
 }
 

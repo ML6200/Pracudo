@@ -4,6 +4,7 @@ import { renderAlgorithm } from './renderer';
 import {
   AliasEntry,
   applyAliases,
+  normalizeForComparison,
   reverseAliases,
   setupLiveAliasing,
   getAliases,
@@ -249,8 +250,8 @@ function checkQuiz() {
       const idx = parseInt(input.dataset.blankIndex!);
       const blank = currentBlanks[idx];
       const isCorrect =
-        applyAliases(blank.userAnswer).replace(/\s+/g, ' ').trim() ===
-        applyAliases(blank.answer).replace(/\s+/g, ' ').trim();
+        normalizeForComparison(blank.userAnswer) ===
+        normalizeForComparison(blank.answer);
 
       input.classList.add(isCorrect ? 'blank-correct' : 'blank-wrong');
       input.disabled = true;
@@ -268,11 +269,7 @@ function checkQuiz() {
     $<HTMLButtonElement>('btn-retry').style.display = '';
 
     const missedParts = currentBlanks
-      .filter((b) => {
-        const exp = applyAliases(b.answer).replace(/\s+/g, ' ').trim();
-        const act = applyAliases(b.userAnswer).replace(/\s+/g, ' ').trim();
-        return exp !== act;
-      })
+      .filter((b) => normalizeForComparison(b.answer) !== normalizeForComparison(b.userAnswer))
       .map((b) => b.answer);
 
     recordAttempt({
@@ -676,6 +673,52 @@ function init() {
   });
   fileInput.addEventListener('change', () => {
     if (fileInput.files?.[0]) handleOCRFile(fileInput.files[0]);
+  });
+
+  // Export / Import
+  $('btn-export').addEventListener('click', () => {
+    const algos = loadAlgorithms();
+    if (algos.length === 0) { alert('Nincs exportálható algoritmus.'); return; }
+    const blob = new Blob([JSON.stringify(algos, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pracudo-algoritmusok.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  $('btn-import').addEventListener('click', () => {
+    $<HTMLInputElement>('import-file-input').click();
+  });
+
+  $<HTMLInputElement>('import-file-input').addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = JSON.parse(reader.result as string) as Algorithm[];
+        if (!Array.isArray(imported)) throw new Error('invalid');
+        const existing = loadAlgorithms();
+        const existingIds = new Set(existing.map((a) => a.id));
+        let added = 0;
+        for (const algo of imported) {
+          if (!algo.lines || !algo.rawText) continue;
+          if (existingIds.has(algo.id)) {
+            algo.id = crypto.randomUUID();
+          }
+          saveAlgorithm(algo);
+          added++;
+        }
+        alert(`${added} algoritmus importálva.`);
+        renderLibrary();
+      } catch {
+        alert('Hibás fájlformátum.');
+      }
+      (e.target as HTMLInputElement).value = '';
+    };
+    reader.readAsText(file);
   });
 
   // Settings
