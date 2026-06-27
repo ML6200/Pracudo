@@ -34,15 +34,28 @@ export interface Suggestion {
   priority: number;
 }
 
-const STORAGE_KEY = 'pracudo_stats';
+const USER_KEY = 'pracudo_user';
+
+export function getCurrentUser(): string {
+  return localStorage.getItem(USER_KEY) || '';
+}
+
+export function setCurrentUser(name: string): void {
+  localStorage.setItem(USER_KEY, name.trim());
+}
+
+function statsKey(): string {
+  const user = getCurrentUser();
+  return user ? `pracudo_stats_${user}` : 'pracudo_stats';
+}
 
 function loadAttempts(): QuizAttempt[] {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = localStorage.getItem(statsKey());
   return raw ? JSON.parse(raw) : [];
 }
 
 function saveAttempts(attempts: QuizAttempt[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(attempts));
+  localStorage.setItem(statsKey(), JSON.stringify(attempts));
 }
 
 export function recordAttempt(data: Omit<QuizAttempt, 'id' | 'timestamp'>): void {
@@ -205,7 +218,7 @@ export function getFrequentMistakes(
 }
 
 export function resetStats(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(statsKey());
 }
 
 export function formatRelativeTime(timestamp: number): string {

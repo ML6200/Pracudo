@@ -33,6 +33,8 @@ import {
   getFrequentMistakes,
   resetStats,
   formatRelativeTime,
+  getCurrentUser,
+  setCurrentUser,
 } from './stats';
 
 let currentAlgoId: string | null = null;
@@ -761,4 +763,48 @@ function init() {
   });
 }
 
-init();
+function showWelcome() {
+  const welcomeScreen = $('welcome-screen');
+  const nameInput = $<HTMLInputElement>('welcome-name');
+  const startBtn = $<HTMLButtonElement>('btn-welcome-start');
+
+  welcomeScreen.style.display = 'flex';
+  $('app').style.display = 'none';
+
+  nameInput.addEventListener('input', () => {
+    startBtn.disabled = nameInput.value.trim().length === 0;
+  });
+
+  const enterApp = () => {
+    const name = nameInput.value.trim();
+    if (!name) return;
+    setCurrentUser(name);
+    welcomeScreen.style.display = 'none';
+    $('app').style.display = '';
+    $('user-greeting').textContent = name;
+    init();
+  };
+
+  startBtn.addEventListener('click', enterApp);
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') enterApp();
+  });
+
+  nameInput.focus();
+}
+
+if (getCurrentUser()) {
+  $('welcome-screen').style.display = 'none';
+  $('app').style.display = '';
+  $('user-greeting').textContent = getCurrentUser();
+  init();
+} else {
+  showWelcome();
+}
+
+$('user-greeting').addEventListener('click', () => {
+  if (confirm('Felhasználót váltasz? (A statisztikáid megmaradnak.)')) {
+    localStorage.removeItem('pracudo_user');
+    location.reload();
+  }
+});

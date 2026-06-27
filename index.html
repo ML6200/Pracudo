@@ -9,7 +9,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="app">
+    <!-- Welcome Screen -->
+    <div id="welcome-screen" class="welcome-overlay" style="display:none">
+      <div class="welcome-card">
+        <h1>Pra<span>cudo</span></h1>
+        <p>Pseudokód gyakorló</p>
+        <input type="text" id="welcome-name" placeholder="Add meg a neved..." autocomplete="off" spellcheck="false" maxlength="30">
+        <button id="btn-welcome-start" class="btn btn-primary" disabled>Kezdés</button>
+      </div>
+    </div>
+
+    <div id="app" style="display:none">
       <header>
         <h1>Pra<span>cudo</span></h1>
         <nav>
@@ -18,6 +28,7 @@
           <button id="nav-quiz">Gyakorlás</button>
           <button id="nav-stats">Haladás</button>
           <button id="nav-settings" title="Beállítások">⚙</button>
+          <span id="user-greeting" class="user-greeting" title="Felhasználó váltás"></span>
         </nav>
       </header>
 
