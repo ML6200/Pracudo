@@ -26,7 +26,7 @@ type Expr =
   | { kind: "call"; name: string; args: Expr[] };
 
 type ClassifiedLine =
-  | { kind: "func_header"; name: string; params: string[] }
+  | { kind: "func_header"; name: string; params: InputParam[] }
   | { kind: "func_end" }
   | { kind: "assign"; target: string; index: Expr | null; value: Expr }
   | { kind: "if"; condition: Expr }
@@ -106,6 +106,16 @@ function tokenizeExpr(text: string): ExprToken[] {
     }
     if (text[i] === "⌉") {
       tokens.push({ type: "ceil_close", value: "⌉" });
+      i++;
+      continue;
+    }
+    if (text[i] === "∞") {
+      tokens.push({ type: "number", value: "Infinity" });
+      i++;
+      continue;
+    }
+    if (text[i] === "−" || text[i] === "–") {
+      tokens.push({ type: "op", value: "-" });
       i++;
       continue;
     }
@@ -285,8 +295,9 @@ class ExprParser {
   }
 
   private parseUnary(): Expr {
-    if (this.peek()?.type === "op" && this.peek()!.value === "-") {
-      this.advance();
+    if (this.peek()?.type === "op" && ["-", "+"].includes(this.peek()!.value)) {
+      const op = this.advance().value;
+      if (op === "+") return this.parseUnary();
       return { kind: "unary", op: "-", operand: this.parseUnary() };
     }
     return this.parseAtom();
@@ -330,6 +341,10 @@ class ExprParser {
       if (t.value === "hamis") {
         this.advance();
         return { kind: "bool", value: false };
+      }
+      if (/^inf(inity)?$/i.test(t.value)) {
+        this.advance();
+        return { kind: "number", value: Infinity };
       }
 
       this.advance();
@@ -387,18 +402,29 @@ function classifyLine(raw: string): ClassifiedLine {
   const trimmed = raw.trim();
 
   const funcMatch = trimmed.match(
-    /^(függvény|eljárás)\s+([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*\(([^)]*)\)/i,
-  );
-  if (funcMatch) {
-    const params: string[] = [];
-    for (const p of funcMatch[3].split(",")) {
-      let t = p.trim().replace(/^címszerint\s+/i, "");
-      const colonIdx = t.indexOf(":");
-      if (colonIdx >= 0) t = t.substring(0, colonIdx).trim();
-      if (t) params.push(t);
+      /^(függvény|eljárás)\s+(.+?)\s*\(([^)]*)\)/i,
+    );
+    if (funcMatch) {
+      const params: InputParam[] = [];
+      for (const p of funcMatch[3].split(",")) {
+        const t = p.trim();
+        if (!t) continue;
+        const paramMatch = t.match(
+          /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*:\s*(.+)$/i,
+        );
+        if (paramMatch) {
+          const typeStr = paramMatch[2].trim();
+          params.push({
+            name: paramMatch[1],
+            type: typeStr,
+            isArray: /tömb/i.test(typeStr),
+          });
+        } else {
+          params.push({ name: t, type: "egész", isArray: false });
+        }
+      }
+      return { kind: "func_header", name: funcMatch[2], params };
     }
-    return { kind: "func_header", name: funcMatch[2], params };
-  }
 
   if (/^(függvény|eljárás)\s+vége$/i.test(trimmed)) return { kind: "func_end" };
 
@@ -551,8 +577,10 @@ function asBool(v: Value): boolean {
 
 export function formatValue(v: Value): string {
   if (typeof v === "string") return v; // <- ÚJ: Szövegek (predikátumok) natív visszaadása
-  if (typeof v === "number")
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return v > 0 ? "Infinity" : "-Infinity";
     return Number.isInteger(v) ? v.toString() : v.toFixed(2);
+  }
   if (typeof v === "boolean") return v ? "igaz" : "hamis";
   if (Array.isArray(v)) return `[${v.map(formatValue).join(", ")}]`;
   return String(v);
@@ -560,44 +588,65 @@ export function formatValue(v: Value): string {
 
 export function parseInputDeclaration(
   inputStr: string,
-  funcParams: string[],
+  funcParams: string[] | InputParam[],
 ): InputParam[] {
   const typeMap = new Map<string, { type: string; isArray: boolean }>();
+
+  const typedParams = funcParams.filter(
+    (p): p is InputParam => typeof p !== "string",
+  );
+
+  for (const param of typedParams) {
+    typeMap.set(param.name, {
+      type: param.type,
+      isArray: param.isArray,
+    });
+  }
 
   if (inputStr.trim()) {
     const segments = inputStr.split(",");
     let pendingNames: string[] = [];
 
     for (const seg of segments) {
-      const match = seg
-        .trim()
-        .match(
-          /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*[––—-]\s*(.+)$/,
-        );
-      if (match) {
-        pendingNames.push(match[1]);
-        const typeStr = match[2].trim();
+      const trimmed = seg.trim();
+      const match = trimmed.match(
+        /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*[––—-]\s*(.+)$/,
+      );
+      const colonMatch = trimmed.match(
+        /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*:\s*(.+)$/,
+      );
+      if (match || colonMatch) {
+        const name = (match || colonMatch)![1];
+        const typeStr = ((match || colonMatch)![2] || "").trim();
+        pendingNames.push(name);
         const isArray = /tömb/i.test(typeStr);
-        for (const name of pendingNames) {
-          typeMap.set(name, { type: typeStr, isArray });
+        for (const nameEntry of pendingNames) {
+          typeMap.set(nameEntry, { type: typeStr, isArray });
         }
         pendingNames = [];
       } else {
-        const nameMatch = seg
-          .trim()
-          .match(
-            /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)$/,
-          );
+        const nameMatch = trimmed.match(
+          /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)$/,
+        );
         if (nameMatch) pendingNames.push(nameMatch[1]);
       }
     }
   }
 
-  const names = funcParams.length > 0 ? funcParams : [...typeMap.keys()];
+  const names =
+    typedParams.length > 0
+      ? typedParams.map((p) => p.name)
+      : [...typeMap.keys()];
+
   return names.map((name) => ({
     name,
-    type: typeMap.get(name)?.type || "egész",
-    isArray: typeMap.get(name)?.isArray || false,
+    type: typeMap.get(name)?.type ||
+      typedParams.find((p) => p.name === name)?.type ||
+      "egész",
+    isArray:
+      typeMap.get(name)?.isArray ||
+      typedParams.find((p) => p.name === name)?.isArray ||
+      false,
   }));
 }
 
@@ -618,7 +667,7 @@ export class Interpreter {
   private forState: Map<number, { endVal: number; step: number }>;
   private stepCount: number;
   private maxSteps = 10000;
-  public funcParams: string[];
+  public funcParams: InputParam[];
 
   constructor(algo: Algorithm) {
     this.lines = algo.lines;
