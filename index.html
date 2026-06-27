@@ -50,9 +50,41 @@
           <button class="btn back-btn" id="btn-back-view">← Vissza</button>
           <h2 id="view-algo-title"></h2>
           <button class="btn" id="btn-edit-algo">Szerkesztés</button>
+          <button class="btn" id="btn-run-algo">▶ Futtatás</button>
           <button class="btn toggle-btn" id="btn-toggle-alias">← ∧ ¬</button>
         </div>
         <div id="algo-render"></div>
+        <!-- Interpreter Panel -->
+        <div id="interpreter-panel" style="display:none">
+          <div id="interp-setup">
+            <div class="interp-setup-card">
+              <h3>Bemeneti értékek</h3>
+              <div id="interp-input-fields"></div>
+              <div class="interp-setup-actions">
+                <button id="btn-interp-start" class="btn btn-primary">Indítás</button>
+                <button id="btn-interp-close" class="btn">Bezárás</button>
+              </div>
+            </div>
+          </div>
+          <div id="interp-execution" style="display:none">
+            <div class="interp-toolbar">
+              <button id="btn-interp-step" class="btn btn-primary">Lépés</button>
+              <button id="btn-interp-run" class="btn">▶ Futtatás</button>
+              <button id="btn-interp-reset" class="btn">↺ Újra</button>
+              <span id="interp-step-count" class="interp-step-count"></span>
+            </div>
+            <div id="interp-status" class="interp-status"></div>
+            <div class="interp-layout">
+              <div id="interp-code" class="interp-code-panel"></div>
+              <div class="interp-sidebar">
+                <h4>Változók</h4>
+                <div id="interp-vars"></div>
+              </div>
+            </div>
+            <div id="interp-result" style="display:none"></div>
+          </div>
+        </div>
+
         <div id="algo-edit" style="display:none">
           <textarea id="algo-edit-input" class="quiz-textarea" spellcheck="false"></textarea>
           <div class="alias-hint">

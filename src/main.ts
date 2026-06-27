@@ -1,6 +1,6 @@
-import './styles.css';
-import { parseAlgorithm, algorithmToText, Algorithm } from './parser';
-import { renderAlgorithm } from './renderer';
+import "./styles.css";
+import { parseAlgorithm, algorithmToText, Algorithm } from "./parser";
+import { renderAlgorithm } from "./renderer";
 import {
   AliasEntry,
   applyAliases,
@@ -11,10 +11,15 @@ import {
   saveAliases,
   resetAliases,
   getDefaultAliases,
-} from './aliases';
-import { loadAlgorithms, saveAlgorithm, deleteAlgorithm, getAlgorithm } from './storage';
-import { recognizeImage } from './ocr';
-import { formatPseudoCode } from './formatter';
+} from "./aliases";
+import {
+  loadAlgorithms,
+  saveAlgorithm,
+  deleteAlgorithm,
+  getAlgorithm,
+} from "./storage";
+import { recognizeImage } from "./ocr";
+import { formatPseudoCode } from "./formatter";
 import {
   QuizMode,
   BlankSlot,
@@ -24,7 +29,7 @@ import {
   checkReproduction,
   renderBlanksQuiz,
   renderReproductionResult,
-} from './quiz';
+} from "./quiz";
 import {
   recordAttempt,
   getOverallStats,
@@ -35,30 +40,44 @@ import {
   formatRelativeTime,
   getCurrentUser,
   setCurrentUser,
-} from './stats';
+} from "./stats";
+import {
+  Interpreter,
+  Value,
+  formatValue,
+  parseInputDeclaration,
+} from "./interpreter";
 
 let currentAlgoId: string | null = null;
-let currentQuizMode: QuizMode = 'blanks';
+let currentQuizMode: QuizMode = "blanks";
 let currentBlanks: BlankSlot[] = [];
-let modalMode: 'text' | 'ocr' = 'text';
+let modalMode: "text" | "ocr" = "text";
 let showAliased = true;
+let currentInterpreter: Interpreter | null = null;
+let interpAnimInterval: number | null = null;
+let interpPrevVars: Record<string, string> = {};
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const $ = <T extends HTMLElement>(id: string) =>
+  document.getElementById(id) as T;
 
 function switchView(viewId: string) {
-  document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
-  $(viewId).classList.add('active');
+  document
+    .querySelectorAll(".view")
+    .forEach((v) => v.classList.remove("active"));
+  $(viewId).classList.add("active");
 
-  document.querySelectorAll('nav button').forEach((b) => b.classList.remove('active'));
-  if (viewId === 'view-library') $('nav-library').classList.add('active');
-  else if (viewId === 'view-algo') $('nav-view').classList.add('active');
-  else if (viewId === 'view-quiz') $('nav-quiz').classList.add('active');
-  else if (viewId === 'view-stats') $('nav-stats').classList.add('active');
+  document
+    .querySelectorAll("nav button")
+    .forEach((b) => b.classList.remove("active"));
+  if (viewId === "view-library") $("nav-library").classList.add("active");
+  else if (viewId === "view-algo") $("nav-view").classList.add("active");
+  else if (viewId === "view-quiz") $("nav-quiz").classList.add("active");
+  else if (viewId === "view-stats") $("nav-stats").classList.add("active");
 }
 
 function renderLibrary() {
   const algos = loadAlgorithms();
-  const list = $('algo-list');
+  const list = $("algo-list");
 
   if (algos.length === 0) {
     list.innerHTML = `
@@ -75,7 +94,7 @@ function renderLibrary() {
       (a) => `
     <div class="algo-card" data-id="${a.id}">
       <div class="algo-card-info">
-        <h3>${a.number ? a.number + ' ' : ''}${a.title}</h3>
+        <h3>${a.number ? a.number + " " : ""}${a.title}</h3>
         <p>${a.lines.length} sor</p>
       </div>
       <div class="algo-card-actions">
@@ -84,37 +103,37 @@ function renderLibrary() {
         <button class="btn btn-danger" data-action="delete" data-id="${a.id}">Törlés</button>
       </div>
     </div>
-  `
+  `,
     )
-    .join('');
+    .join("");
 
   list.querySelectorAll('[data-action="view"]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openAlgoView((btn as HTMLElement).dataset.id!);
     });
   });
 
   list.querySelectorAll('[data-action="quiz"]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openQuiz((btn as HTMLElement).dataset.id!);
     });
   });
 
   list.querySelectorAll('[data-action="delete"]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.id!;
-      if (confirm('Biztosan törlöd?')) {
+      if (confirm("Biztosan törlöd?")) {
         deleteAlgorithm(id);
         renderLibrary();
       }
     });
   });
 
-  list.querySelectorAll('.algo-card').forEach((card) => {
-    card.addEventListener('click', () => {
+  list.querySelectorAll(".algo-card").forEach((card) => {
+    card.addEventListener("click", () => {
       openAlgoView((card as HTMLElement).dataset.id!);
     });
   });
@@ -124,59 +143,67 @@ function openAlgoView(id: string) {
   const algo = getAlgorithm(id);
   if (!algo) return;
   currentAlgoId = id;
-  $('view-algo-title').textContent = `${algo.number} ${algo.title}`;
+  $("view-algo-title").textContent = `${algo.number} ${algo.title}`;
   renderAlgoWithAliasState(algo);
-  $<HTMLDivElement>('algo-render').style.display = '';
-  $<HTMLDivElement>('algo-edit').style.display = 'none';
-  $('btn-edit-algo').textContent = 'Szerkesztés';
+  $<HTMLDivElement>("algo-render").style.display = "";
+  $<HTMLDivElement>("algo-edit").style.display = "none";
+  $<HTMLDivElement>("interpreter-panel").style.display = "none";
+  if (interpAnimInterval !== null) {
+    clearInterval(interpAnimInterval);
+    interpAnimInterval = null;
+  }
+  currentInterpreter = null;
+  $("btn-edit-algo").textContent = "Szerkesztés";
   updateAliasToggleButton();
-  switchView('view-algo');
+  switchView("view-algo");
 }
 
 function renderAlgoWithAliasState(algo: Algorithm) {
   if (showAliased) {
-    $('algo-render').innerHTML = renderAlgorithm(algo);
+    $("algo-render").innerHTML = renderAlgorithm(algo);
   } else {
     const text = algorithmToText(algo);
     const rawText = reverseAliases(text);
     const rawAlgo = parseAlgorithm(rawText);
-    $('algo-render').innerHTML = renderAlgorithm(rawAlgo);
+    $("algo-render").innerHTML = renderAlgorithm(rawAlgo);
   }
 }
 
 function updateAliasToggleButton() {
-  const btn = $('btn-toggle-alias');
+  const btn = $("btn-toggle-alias");
   if (showAliased) {
-    btn.textContent = '← ∧ ¬';
-    btn.classList.add('active');
+    btn.textContent = "← ∧ ¬";
+    btn.classList.add("active");
   } else {
-    btn.textContent = '<- ^ !';
-    btn.classList.remove('active');
+    btn.textContent = "<- ^ !";
+    btn.classList.remove("active");
   }
 }
 
 function toggleEditMode() {
-  const renderDiv = $<HTMLDivElement>('algo-render');
-  const editDiv = $<HTMLDivElement>('algo-edit');
-  const btn = $('btn-edit-algo');
+  const renderDiv = $<HTMLDivElement>("algo-render");
+  const editDiv = $<HTMLDivElement>("algo-edit");
+  const btn = $("btn-edit-algo");
 
-  if (editDiv.style.display === 'none') {
+  if (editDiv.style.display === "none") {
     const algo = currentAlgoId ? getAlgorithm(currentAlgoId) : null;
     if (!algo) return;
-    $<HTMLTextAreaElement>('algo-edit-input').value = algorithmToText(algo);
-    renderDiv.style.display = 'none';
-    editDiv.style.display = '';
-    btn.textContent = 'Megtekintés';
+    $<HTMLTextAreaElement>("algo-edit-input").value = algorithmToText(algo);
+    renderDiv.style.display = "none";
+    editDiv.style.display = "";
+    btn.textContent = "Megtekintés";
   } else {
-    renderDiv.style.display = '';
-    editDiv.style.display = 'none';
-    btn.textContent = 'Szerkesztés';
+    renderDiv.style.display = "";
+    editDiv.style.display = "none";
+    btn.textContent = "Szerkesztés";
   }
 }
 
 function saveEditedAlgo() {
   if (!currentAlgoId) return;
-  const rawText = applyAliases($<HTMLTextAreaElement>('algo-edit-input').value.trim());
+  const rawText = applyAliases(
+    $<HTMLTextAreaElement>("algo-edit-input").value.trim(),
+  );
   if (!rawText) return;
   const algo = parseAlgorithm(rawText);
   algo.id = currentAlgoId;
@@ -188,11 +215,11 @@ function openQuiz(id: string) {
   const algo = getAlgorithm(id);
   if (!algo) return;
   currentAlgoId = id;
-  $('quiz-algo-title').textContent = `${algo.number} ${algo.title}`;
-  $<HTMLDivElement>('quiz-setup').style.display = '';
-  $<HTMLDivElement>('quiz-area').style.display = 'none';
-  $<HTMLDivElement>('quiz-result-area').style.display = 'none';
-  switchView('view-quiz');
+  $("quiz-algo-title").textContent = `${algo.number} ${algo.title}`;
+  $<HTMLDivElement>("quiz-setup").style.display = "";
+  $<HTMLDivElement>("quiz-area").style.display = "none";
+  $<HTMLDivElement>("quiz-result-area").style.display = "none";
+  switchView("view-quiz");
 }
 
 function startQuiz() {
@@ -200,36 +227,39 @@ function startQuiz() {
   const algo = getAlgorithm(currentAlgoId);
   if (!algo) return;
 
-  $<HTMLDivElement>('quiz-setup').style.display = 'none';
-  $<HTMLDivElement>('quiz-area').style.display = '';
-  $<HTMLDivElement>('quiz-result-area').style.display = 'none';
-  $<HTMLButtonElement>('btn-retry').style.display = 'none';
-  $<HTMLButtonElement>('btn-check').style.display = '';
+  $<HTMLDivElement>("quiz-setup").style.display = "none";
+  $<HTMLDivElement>("quiz-area").style.display = "";
+  $<HTMLDivElement>("quiz-result-area").style.display = "none";
+  $<HTMLButtonElement>("btn-retry").style.display = "none";
+  $<HTMLButtonElement>("btn-check").style.display = "";
 
-  const content = $('quiz-content');
+  const content = $("quiz-content");
 
-  if (currentQuizMode === 'blanks') {
-    const difficulty = parseInt(($('difficulty') as HTMLInputElement).value) / 100;
+  if (currentQuizMode === "blanks") {
+    const difficulty =
+      parseInt(($("difficulty") as HTMLInputElement).value) / 100;
     currentBlanks = generateBlanks(algo, difficulty);
     content.innerHTML = renderBlanksQuiz(algo, currentBlanks);
-    $<HTMLDivElement>('alias-hint').style.display = '';
+    $<HTMLDivElement>("alias-hint").style.display = "";
 
-    content.querySelectorAll<HTMLInputElement>('.blank-input').forEach((input) => {
-      setupLiveAliasing(input as unknown as HTMLTextAreaElement);
-    });
+    content
+      .querySelectorAll<HTMLInputElement>(".blank-input")
+      .forEach((input) => {
+        setupLiveAliasing(input as unknown as HTMLTextAreaElement);
+      });
   } else {
     content.innerHTML = `
       <div class="algo-header" style="margin-bottom:1rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;">
         <span class="algo-number">${algo.number}</span>
         <span class="algo-label">Algoritmus</span>
         <span class="algo-title">${algo.title}</span>
-        ${algo.inputs ? `<div class="algo-io"><span class="token-keyword">Bemenet:</span> ${algo.inputs}</div>` : ''}
-        ${algo.outputs ? `<div class="algo-io"><span class="token-keyword">Kimenet:</span> ${algo.outputs}</div>` : ''}
+        ${algo.inputs ? `<div class="algo-io"><span class="token-keyword">Bemenet:</span> ${algo.inputs}</div>` : ""}
+        ${algo.outputs ? `<div class="algo-io"><span class="token-keyword">Kimenet:</span> ${algo.outputs}</div>` : ""}
       </div>
       <textarea class="quiz-textarea" id="reproduce-input" placeholder="Írd le az algoritmust emlékezetből...&#10;&#10;Tipp: a sorszámokat nem kell kiírni, de az indentálás számít.&#10;Gyorsbillentyűk: <- → ←, ^ → ∧, ! → ¬" spellcheck="false"></textarea>
     `;
-    $<HTMLDivElement>('alias-hint').style.display = '';
-    const textarea = $<HTMLTextAreaElement>('reproduce-input');
+    $<HTMLDivElement>("alias-hint").style.display = "";
+    const textarea = $<HTMLTextAreaElement>("reproduce-input");
     setupLiveAliasing(textarea);
     textarea.focus();
   }
@@ -240,70 +270,78 @@ function checkQuiz() {
   const algo = getAlgorithm(currentAlgoId);
   if (!algo) return;
 
-  if (currentQuizMode === 'blanks') {
-    document.querySelectorAll<HTMLInputElement>('.blank-input').forEach((input) => {
-      const idx = parseInt(input.dataset.blankIndex!);
-      currentBlanks[idx].userAnswer = input.value;
-    });
+  if (currentQuizMode === "blanks") {
+    document
+      .querySelectorAll<HTMLInputElement>(".blank-input")
+      .forEach((input) => {
+        const idx = parseInt(input.dataset.blankIndex!);
+        currentBlanks[idx].userAnswer = input.value;
+      });
 
     const result = checkBlanks(currentBlanks);
 
-    document.querySelectorAll<HTMLInputElement>('.blank-input').forEach((input) => {
-      const idx = parseInt(input.dataset.blankIndex!);
-      const blank = currentBlanks[idx];
-      const isCorrect =
-        normalizeForComparison(blank.userAnswer) ===
-        normalizeForComparison(blank.answer);
+    document
+      .querySelectorAll<HTMLInputElement>(".blank-input")
+      .forEach((input) => {
+        const idx = parseInt(input.dataset.blankIndex!);
+        const blank = currentBlanks[idx];
+        const isCorrect =
+          normalizeForComparison(blank.userAnswer) ===
+          normalizeForComparison(blank.answer);
 
-      input.classList.add(isCorrect ? 'blank-correct' : 'blank-wrong');
-      input.disabled = true;
+        input.classList.add(isCorrect ? "blank-correct" : "blank-wrong");
+        input.disabled = true;
 
-      if (!isCorrect) {
-        const hint = document.createElement('span');
-        hint.className = 'diff-hint';
-        hint.textContent = ` → ${blank.answer}`;
-        input.parentElement!.insertBefore(hint, input.nextSibling);
-      }
-    });
+        if (!isCorrect) {
+          const hint = document.createElement("span");
+          hint.className = "diff-hint";
+          hint.textContent = ` → ${blank.answer}`;
+          input.parentElement!.insertBefore(hint, input.nextSibling);
+        }
+      });
 
     showScore(result.score, result.correctItems, result.totalItems);
-    $<HTMLButtonElement>('btn-check').style.display = 'none';
-    $<HTMLButtonElement>('btn-retry').style.display = '';
+    $<HTMLButtonElement>("btn-check").style.display = "none";
+    $<HTMLButtonElement>("btn-retry").style.display = "";
 
     const missedParts = currentBlanks
-      .filter((b) => normalizeForComparison(b.answer) !== normalizeForComparison(b.userAnswer))
+      .filter(
+        (b) =>
+          normalizeForComparison(b.answer) !==
+          normalizeForComparison(b.userAnswer),
+      )
       .map((b) => b.answer);
 
     recordAttempt({
       algoId: currentAlgoId!,
       algoTitle: algo.title,
       algoNumber: algo.number,
-      mode: 'blanks',
+      mode: "blanks",
       score: result.score,
       totalItems: result.totalItems,
       correctItems: result.correctItems,
       missedParts,
     });
   } else {
-    const userText = $<HTMLTextAreaElement>('reproduce-input').value;
+    const userText = $<HTMLTextAreaElement>("reproduce-input").value;
     const result = checkReproduction(algo, userText);
 
-    $<HTMLDivElement>('quiz-area').style.display = 'none';
-    $<HTMLDivElement>('quiz-result-area').style.display = '';
+    $<HTMLDivElement>("quiz-area").style.display = "none";
+    $<HTMLDivElement>("quiz-result-area").style.display = "";
     showScore(result.score, result.correctItems, result.totalItems);
-    $('quiz-result-detail').innerHTML = renderReproductionResult(
-      result.details as any
+    $("quiz-result-detail").innerHTML = renderReproductionResult(
+      result.details as any,
     );
 
     const missedParts = (result.details as LineDiff[])
-      .filter((d) => d.status === 'wrong' || d.status === 'missing')
+      .filter((d) => d.status === "wrong" || d.status === "missing")
       .map((d) => d.expected);
 
     recordAttempt({
       algoId: currentAlgoId!,
       algoTitle: algo.title,
       algoNumber: algo.number,
-      mode: 'reproduce',
+      mode: "reproduce",
       score: result.score,
       totalItems: result.totalItems,
       correctItems: result.correctItems,
@@ -313,45 +351,46 @@ function checkQuiz() {
 }
 
 function showScore(score: number, correct: number, total: number) {
-  const scoreClass = score === 100 ? 'score-perfect' : score >= 60 ? 'score-good' : 'score-poor';
-  $('quiz-score').innerHTML = `
+  const scoreClass =
+    score === 100 ? "score-perfect" : score >= 60 ? "score-good" : "score-poor";
+  $("quiz-score").innerHTML = `
     <div class="score-value ${scoreClass}">${score}%</div>
     <div class="score-label">${correct} / ${total} helyes</div>
   `;
-  $<HTMLDivElement>('quiz-score').style.display = '';
+  $<HTMLDivElement>("quiz-score").style.display = "";
 }
 
-function openModal(mode: 'text' | 'ocr') {
+function openModal(mode: "text" | "ocr") {
   modalMode = mode;
-  $<HTMLDivElement>('modal-add').style.display = 'flex';
+  $<HTMLDivElement>("modal-add").style.display = "flex";
 
-  if (mode === 'text') {
-    $('modal-title').textContent = 'Algoritmus hozzáadása — Szöveg';
-    $<HTMLDivElement>('modal-text-input').style.display = '';
-    $<HTMLDivElement>('modal-ocr-input').style.display = 'none';
-    ($('algo-input') as HTMLTextAreaElement).value = '';
-    ($('algo-input') as HTMLTextAreaElement).focus();
+  if (mode === "text") {
+    $("modal-title").textContent = "Algoritmus hozzáadása — Szöveg";
+    $<HTMLDivElement>("modal-text-input").style.display = "";
+    $<HTMLDivElement>("modal-ocr-input").style.display = "none";
+    ($("algo-input") as HTMLTextAreaElement).value = "";
+    ($("algo-input") as HTMLTextAreaElement).focus();
   } else {
-    $('modal-title').textContent = 'Algoritmus hozzáadása — OCR';
-    $<HTMLDivElement>('modal-text-input').style.display = 'none';
-    $<HTMLDivElement>('modal-ocr-input').style.display = '';
-    $<HTMLDivElement>('ocr-preview').style.display = 'none';
-    $<HTMLDivElement>('ocr-progress').style.display = 'none';
-    $<HTMLDivElement>('ocr-result').style.display = 'none';
+    $("modal-title").textContent = "Algoritmus hozzáadása — OCR";
+    $<HTMLDivElement>("modal-text-input").style.display = "none";
+    $<HTMLDivElement>("modal-ocr-input").style.display = "";
+    $<HTMLDivElement>("ocr-preview").style.display = "none";
+    $<HTMLDivElement>("ocr-progress").style.display = "none";
+    $<HTMLDivElement>("ocr-result").style.display = "none";
   }
 }
 
 function closeModal() {
-  $<HTMLDivElement>('modal-add').style.display = 'none';
+  $<HTMLDivElement>("modal-add").style.display = "none";
 }
 
 function saveFromModal() {
   let rawText: string;
 
-  if (modalMode === 'text') {
-    rawText = ($('algo-input') as HTMLTextAreaElement).value.trim();
+  if (modalMode === "text") {
+    rawText = ($("algo-input") as HTMLTextAreaElement).value.trim();
   } else {
-    rawText = ($('ocr-text-output') as HTMLTextAreaElement).value.trim();
+    rawText = ($("ocr-text-output") as HTMLTextAreaElement).value.trim();
   }
 
   if (!rawText) return;
@@ -364,28 +403,28 @@ function saveFromModal() {
 }
 
 async function handleOCRFile(file: File) {
-  const preview = $('ocr-preview');
-  const img = document.createElement('img');
+  const preview = $("ocr-preview");
+  const img = document.createElement("img");
   img.src = URL.createObjectURL(file);
-  preview.innerHTML = '';
+  preview.innerHTML = "";
   preview.appendChild(img);
-  preview.style.display = '';
+  preview.style.display = "";
 
-  $<HTMLDivElement>('ocr-progress').style.display = '';
-  $('ocr-status').textContent = 'Feldolgozás...';
+  $<HTMLDivElement>("ocr-progress").style.display = "";
+  $("ocr-status").textContent = "Feldolgozás...";
 
   const text = await recognizeImage(file, (progress) => {
-    $<HTMLDivElement>('ocr-progress-bar').style.width = `${progress}%`;
-    $('ocr-status').textContent = `Feldolgozás... ${progress}%`;
+    $<HTMLDivElement>("ocr-progress-bar").style.width = `${progress}%`;
+    $("ocr-status").textContent = `Feldolgozás... ${progress}%`;
   });
 
-  $<HTMLDivElement>('ocr-progress').style.display = 'none';
-  $<HTMLDivElement>('ocr-result').style.display = '';
-  ($('ocr-text-output') as HTMLTextAreaElement).value = text;
+  $<HTMLDivElement>("ocr-progress").style.display = "none";
+  $<HTMLDivElement>("ocr-result").style.display = "";
+  ($("ocr-text-output") as HTMLTextAreaElement).value = text;
 }
 
 function renderAliasTable(entries: AliasEntry[]) {
-  const container = $('alias-table-container');
+  const container = $("alias-table-container");
   let html = `<table class="alias-table">
     <thead><tr><th>Cél</th><th>Aliasok (vesszővel elválasztva)</th><th></th></tr></thead>
     <tbody>`;
@@ -393,27 +432,32 @@ function renderAliasTable(entries: AliasEntry[]) {
   entries.forEach((entry, i) => {
     html += `<tr>
       <td><input class="alias-canonical" data-index="${i}" data-field="canonical" value="${entry.canonical}"></td>
-      <td><input data-index="${i}" data-field="aliases" value="${entry.aliases.join(', ')}"></td>
+      <td><input data-index="${i}" data-field="aliases" value="${entry.aliases.join(", ")}"></td>
       <td><button class="alias-remove" data-index="${i}" title="Törlés">×</button></td>
     </tr>`;
   });
 
-  html += '</tbody></table>';
+  html += "</tbody></table>";
   container.innerHTML = html;
 }
 
 function readAliasTable(): AliasEntry[] {
-  const rows = document.querySelectorAll<HTMLInputElement>('.alias-table input[data-field="canonical"]');
+  const rows = document.querySelectorAll<HTMLInputElement>(
+    '.alias-table input[data-field="canonical"]',
+  );
   const entries: AliasEntry[] = [];
 
   rows.forEach((canonInput) => {
     const i = canonInput.dataset.index!;
     const aliasInput = document.querySelector<HTMLInputElement>(
-      `.alias-table input[data-index="${i}"][data-field="aliases"]`
+      `.alias-table input[data-index="${i}"][data-field="aliases"]`,
     );
     const canonical = canonInput.value.trim();
     const aliases = aliasInput
-      ? aliasInput.value.split(',').map((s) => s.trim()).filter(Boolean)
+      ? aliasInput.value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
 
     if (canonical && aliases.length > 0) {
@@ -425,13 +469,13 @@ function readAliasTable(): AliasEntry[] {
 }
 
 function scoreColorClass(score: number): string {
-  if (score >= 90) return 'score-perfect';
-  if (score >= 60) return 'score-good';
-  return 'score-poor';
+  if (score >= 90) return "score-perfect";
+  if (score >= 60) return "score-good";
+  return "score-poor";
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function renderStatsView() {
@@ -439,10 +483,10 @@ function renderStatsView() {
   const progress = getAllAlgoProgress();
   const algos = loadAlgorithms();
   const suggestions = getSuggestions(
-    algos.map((a) => ({ id: a.id, title: a.title, number: a.number }))
+    algos.map((a) => ({ id: a.id, title: a.title, number: a.number })),
   );
 
-  const content = $('stats-content');
+  const content = $("stats-content");
 
   if (overall.totalAttempts === 0) {
     content.innerHTML = `
@@ -454,7 +498,7 @@ function renderStatsView() {
     return;
   }
 
-  let html = '';
+  let html = "";
 
   html += `<div class="stats-summary">
     <div class="stat-card">
@@ -492,17 +536,17 @@ function renderStatsView() {
 
     for (const prog of progress) {
       const trendIcon =
-        prog.trend === 'improving'
-          ? '↑'
-          : prog.trend === 'declining'
-            ? '↓'
-            : '→';
+        prog.trend === "improving"
+          ? "↑"
+          : prog.trend === "declining"
+            ? "↓"
+            : "→";
       const trendClass =
-        prog.trend === 'improving'
-          ? 'trend-up'
-          : prog.trend === 'declining'
-            ? 'trend-down'
-            : 'trend-stable';
+        prog.trend === "improving"
+          ? "trend-up"
+          : prog.trend === "declining"
+            ? "trend-down"
+            : "trend-stable";
 
       html += `<div class="algo-stat-card">
         <div class="algo-stat-header">
@@ -523,7 +567,7 @@ function renderStatsView() {
             <span>${formatRelativeTime(prog.lastPracticed)}</span>
           </div>
           <div class="score-history">
-            ${prog.recentScores.map((s) => `<div class="score-history-bar ${scoreColorClass(s)}-bg" style="height:${Math.max(10, s)}%" title="${s}%"></div>`).join('')}
+            ${prog.recentScores.map((s) => `<div class="score-history-bar ${scoreColorClass(s)}-bg" style="height:${Math.max(10, s)}%" title="${s}%"></div>`).join("")}
           </div>
         </div>
       </div>`;
@@ -546,11 +590,214 @@ function renderStatsView() {
   content.innerHTML = html;
 
   content.querySelectorAll('[data-action="quiz-suggestion"]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openQuiz((btn as HTMLElement).dataset.algoId!);
     });
   });
+}
+
+// ===== Interpreter =====
+
+function openInterpreter() {
+  if (!currentAlgoId) return;
+  const algo = getAlgorithm(currentAlgoId);
+  if (!algo) return;
+
+  currentInterpreter = new Interpreter(algo);
+  const inputParams = parseInputDeclaration(
+    algo.inputs,
+    currentInterpreter.funcParams,
+  );
+
+  $<HTMLDivElement>("algo-render").style.display = "none";
+  $<HTMLDivElement>("algo-edit").style.display = "none";
+  $<HTMLDivElement>("interpreter-panel").style.display = "";
+  $<HTMLDivElement>("interp-setup").style.display = "";
+  $<HTMLDivElement>("interp-execution").style.display = "none";
+  $("btn-edit-algo").textContent = "Szerkesztés";
+
+  const fields = $("interp-input-fields");
+  if (inputParams.length === 0) {
+    fields.innerHTML =
+      '<p class="interp-no-params">Nincs bemeneti paraméter.</p>';
+  } else {
+    fields.innerHTML = inputParams
+      .map(
+        (p, i) => `
+      <div class="interp-input-row">
+        <label>${p.name} <span class="text-muted">(${p.type})</span></label>
+        <input type="text" id="interp-input-${i}" data-name="${p.name}" data-is-array="${p.isArray}"
+          placeholder="${p.isArray ? "pl. 3, 1, 4, 1, 5" : "pl. 5"}" class="interp-input">
+      </div>
+    `,
+      )
+      .join("");
+  }
+
+  $("interp-code").innerHTML = renderAlgorithm(algo);
+}
+
+function closeInterpreter() {
+  if (interpAnimInterval !== null) {
+    clearInterval(interpAnimInterval);
+    interpAnimInterval = null;
+  }
+  currentInterpreter = null;
+  $<HTMLDivElement>("interpreter-panel").style.display = "none";
+  $<HTMLDivElement>("algo-render").style.display = "";
+}
+
+function startInterpreter() {
+  if (!currentInterpreter) return;
+
+  const inputs: Record<string, Value> = {};
+  document
+    .querySelectorAll<HTMLInputElement>(".interp-input")
+    .forEach((input) => {
+      const name = input.dataset.name!;
+      const isArray = input.dataset.isArray === "true";
+      const raw = input.value.trim().replace(/^\[/, "").replace(/\]$/, "");
+
+      // main.ts - startInterpreter() függvény belseje
+      if (isArray) {
+        inputs[name] = raw
+          .split(",")
+          .map((s) => parseFloat(s.trim()))
+          .filter((n) => !isNaN(n));
+      } else {
+        // parseFloat HELYETT Number() kell a szigorúbb ellenőrzéshez!
+        const num = Number(raw);
+        if (!isNaN(num) && raw !== "") {
+          inputs[name] = num;
+        } else if (raw === "igaz") {
+          inputs[name] = true;
+        } else if (raw === "hamis") {
+          inputs[name] = false;
+        } else if (raw !== "") {
+          // Ha nem szám és nem logikai, akkor szöveges predikátum!
+          inputs[name] = raw;
+        }
+      }
+    });
+
+  currentInterpreter.setInputs(inputs);
+  interpPrevVars = {};
+
+  $<HTMLDivElement>("interp-setup").style.display = "none";
+  $<HTMLDivElement>("interp-execution").style.display = "";
+  $<HTMLDivElement>("interp-result").style.display = "none";
+  $("interp-status").textContent =
+    'Kész a futtatásra. Kattints a „Lépés" gombra.';
+  $("interp-step-count").textContent = "";
+
+  updateInterpHighlight();
+  updateInterpVars();
+}
+
+function interpStep() {
+  if (!currentInterpreter || currentInterpreter.finished) return;
+  interpPrevVars = currentInterpreter.getVariables();
+  const step = currentInterpreter.step();
+  updateInterpDisplay(step);
+  if (currentInterpreter.finished) showInterpResult();
+}
+
+function interpRun() {
+  if (!currentInterpreter) return;
+
+  if (interpAnimInterval !== null) {
+    clearInterval(interpAnimInterval);
+    interpAnimInterval = null;
+    $("btn-interp-run").textContent = "▶ Futtatás";
+    return;
+  }
+
+  if (currentInterpreter.finished) return;
+  $("btn-interp-run").textContent = "⏸ Szünet";
+
+  interpAnimInterval = window.setInterval(() => {
+    if (!currentInterpreter || currentInterpreter.finished) {
+      clearInterval(interpAnimInterval!);
+      interpAnimInterval = null;
+      $("btn-interp-run").textContent = "▶ Futtatás";
+      showInterpResult();
+      return;
+    }
+    interpPrevVars = currentInterpreter.getVariables();
+    const step = currentInterpreter.step();
+    updateInterpDisplay(step);
+  }, 200);
+}
+
+function interpReset() {
+  if (interpAnimInterval !== null) {
+    clearInterval(interpAnimInterval);
+    interpAnimInterval = null;
+  }
+  $("btn-interp-run").textContent = "▶ Futtatás";
+  if (!currentInterpreter) return;
+  currentInterpreter.reset();
+  interpPrevVars = {};
+  $<HTMLDivElement>("interp-setup").style.display = "";
+  $<HTMLDivElement>("interp-execution").style.display = "none";
+}
+
+function updateInterpDisplay(
+  step: import("./interpreter").ExecutionStep | null,
+) {
+  if (!step) return;
+  $("interp-status").textContent =
+    `${step.lineNumber}. sor: ${step.description}`;
+  $("interp-step-count").textContent =
+    `${currentInterpreter!.steps.length} lépés`;
+  updateInterpHighlight();
+  updateInterpVars();
+}
+
+function updateInterpHighlight() {
+  if (!currentInterpreter) return;
+  const pc = currentInterpreter.currentLineIndex;
+  const container = $("interp-code");
+  container.querySelectorAll(".algo-line").forEach((el, i) => {
+    el.classList.toggle("interp-current", i === pc);
+  });
+  const currentEl = container.querySelector(".interp-current");
+  if (currentEl)
+    currentEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function updateInterpVars() {
+  if (!currentInterpreter) return;
+  const vars = currentInterpreter.getVariables();
+  const container = $("interp-vars");
+  const entries = Object.entries(vars);
+  if (entries.length === 0) {
+    container.innerHTML = '<p class="interp-no-params">Nincs változó</p>';
+    return;
+  }
+  container.innerHTML = `<table class="var-table">
+    <thead><tr><th>Név</th><th>Érték</th></tr></thead>
+    <tbody>${entries
+      .map(([k, v]) => {
+        const changed = interpPrevVars[k] !== v;
+        return `<tr class="${changed ? "var-changed" : ""}"><td>${k}</td><td>${v}</td></tr>`;
+      })
+      .join("")}</tbody>
+  </table>`;
+}
+
+function showInterpResult() {
+  if (!currentInterpreter) return;
+  const div = $("interp-result");
+  if (currentInterpreter.error) {
+    div.innerHTML = `<div class="interp-error">${currentInterpreter.error}</div>`;
+  } else if (currentInterpreter.returnValue !== null) {
+    div.innerHTML = `<div class="interp-success">Visszatérési érték: <strong>${formatValue(currentInterpreter.returnValue)}</strong></div>`;
+  } else {
+    div.innerHTML = `<div class="interp-success">Végrehajtva (${currentInterpreter.steps.length} lépés)</div>`;
+  }
+  div.style.display = "";
 }
 
 let settingsSnapshot: AliasEntry[] = [];
@@ -558,39 +805,39 @@ let settingsSnapshot: AliasEntry[] = [];
 function openSettings() {
   settingsSnapshot = structuredClone(getAliases());
   renderAliasTable(settingsSnapshot);
-  $<HTMLDivElement>('modal-settings').style.display = 'flex';
+  $<HTMLDivElement>("modal-settings").style.display = "flex";
 }
 
 function closeSettings() {
-  $<HTMLDivElement>('modal-settings').style.display = 'none';
+  $<HTMLDivElement>("modal-settings").style.display = "none";
 }
 
 function init() {
   renderLibrary();
 
-  $('nav-library').addEventListener('click', () => {
+  $("nav-library").addEventListener("click", () => {
     renderLibrary();
-    switchView('view-library');
+    switchView("view-library");
   });
-  $('nav-view').addEventListener('click', () => {
+  $("nav-view").addEventListener("click", () => {
     if (currentAlgoId) openAlgoView(currentAlgoId);
-    else switchView('view-library');
+    else switchView("view-library");
   });
-  $('nav-quiz').addEventListener('click', () => {
+  $("nav-quiz").addEventListener("click", () => {
     if (currentAlgoId) openQuiz(currentAlgoId);
-    else switchView('view-library');
+    else switchView("view-library");
   });
-  $('nav-stats').addEventListener('click', () => {
+  $("nav-stats").addEventListener("click", () => {
     renderStatsView();
-    switchView('view-stats');
+    switchView("view-stats");
   });
 
-  $('btn-back-view').addEventListener('click', () => {
+  $("btn-back-view").addEventListener("click", () => {
     renderLibrary();
-    switchView('view-library');
+    switchView("view-library");
   });
-  $('btn-edit-algo').addEventListener('click', toggleEditMode);
-  $('btn-toggle-alias').addEventListener('click', () => {
+  $("btn-edit-algo").addEventListener("click", toggleEditMode);
+  $("btn-toggle-alias").addEventListener("click", () => {
     showAliased = !showAliased;
     updateAliasToggleButton();
     if (currentAlgoId) {
@@ -598,110 +845,126 @@ function init() {
       if (algo) renderAlgoWithAliasState(algo);
     }
   });
-  $('btn-cancel-edit').addEventListener('click', toggleEditMode);
-  $('btn-save-edit').addEventListener('click', saveEditedAlgo);
-  $('btn-format-edit').addEventListener('click', () => {
-    const ta = $<HTMLTextAreaElement>('algo-edit-input');
+  $("btn-cancel-edit").addEventListener("click", toggleEditMode);
+  $("btn-save-edit").addEventListener("click", saveEditedAlgo);
+  $("btn-run-algo").addEventListener("click", openInterpreter);
+  $("btn-interp-close").addEventListener("click", closeInterpreter);
+  $("btn-interp-start").addEventListener("click", startInterpreter);
+  $("btn-interp-step").addEventListener("click", interpStep);
+  $("btn-interp-run").addEventListener("click", interpRun);
+  $("btn-interp-reset").addEventListener("click", interpReset);
+  $("btn-format-edit").addEventListener("click", () => {
+    const ta = $<HTMLTextAreaElement>("algo-edit-input");
     ta.value = formatPseudoCode(ta.value);
   });
-  $('btn-back-quiz').addEventListener('click', () => {
+  $("btn-back-quiz").addEventListener("click", () => {
     renderLibrary();
-    switchView('view-library');
+    switchView("view-library");
   });
 
-  $('btn-add-text').addEventListener('click', () => openModal('text'));
-  $('btn-add-ocr').addEventListener('click', () => openModal('ocr'));
-  $('btn-modal-cancel').addEventListener('click', closeModal);
-  $('btn-modal-save').addEventListener('click', saveFromModal);
+  $("btn-add-text").addEventListener("click", () => openModal("text"));
+  $("btn-add-ocr").addEventListener("click", () => openModal("ocr"));
+  $("btn-modal-cancel").addEventListener("click", closeModal);
+  $("btn-modal-save").addEventListener("click", saveFromModal);
 
-  $<HTMLDivElement>('modal-add').addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) closeModal();
+  $<HTMLDivElement>("modal-add").addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).classList.contains("modal-overlay"))
+      closeModal();
   });
 
-  setupLiveAliasing($('algo-input') as HTMLTextAreaElement);
-  setupLiveAliasing($('ocr-text-output') as HTMLTextAreaElement);
-  setupLiveAliasing($('algo-edit-input') as HTMLTextAreaElement);
+  setupLiveAliasing($("algo-input") as HTMLTextAreaElement);
+  setupLiveAliasing($("ocr-text-output") as HTMLTextAreaElement);
+  setupLiveAliasing($("algo-edit-input") as HTMLTextAreaElement);
 
-  $('btn-format-text').addEventListener('click', () => {
-    const ta = $<HTMLTextAreaElement>('algo-input');
+  $("btn-format-text").addEventListener("click", () => {
+    const ta = $<HTMLTextAreaElement>("algo-input");
     ta.value = formatPseudoCode(ta.value);
   });
 
-  $('btn-format-ocr').addEventListener('click', () => {
-    const ta = $<HTMLTextAreaElement>('ocr-text-output');
+  $("btn-format-ocr").addEventListener("click", () => {
+    const ta = $<HTMLTextAreaElement>("ocr-text-output");
     ta.value = formatPseudoCode(ta.value);
   });
 
-  document.querySelectorAll('.quiz-mode-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      document.querySelectorAll('.quiz-mode-card').forEach((c) => c.classList.remove('selected'));
-      card.classList.add('selected');
+  document.querySelectorAll(".quiz-mode-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      document
+        .querySelectorAll(".quiz-mode-card")
+        .forEach((c) => c.classList.remove("selected"));
+      card.classList.add("selected");
       currentQuizMode = (card as HTMLElement).dataset.mode as QuizMode;
 
-      $<HTMLDivElement>('difficulty-wrapper').style.display =
-        currentQuizMode === 'blanks' ? '' : 'none';
+      $<HTMLDivElement>("difficulty-wrapper").style.display =
+        currentQuizMode === "blanks" ? "" : "none";
     });
   });
 
-  const diffSlider = $<HTMLInputElement>('difficulty');
-  diffSlider.addEventListener('input', () => {
-    $('difficulty-value').textContent = `${diffSlider.value}%`;
+  const diffSlider = $<HTMLInputElement>("difficulty");
+  diffSlider.addEventListener("input", () => {
+    $("difficulty-value").textContent = `${diffSlider.value}%`;
   });
 
-  $('btn-start-quiz').addEventListener('click', startQuiz);
-  $('btn-check').addEventListener('click', checkQuiz);
-  $('btn-retry').addEventListener('click', startQuiz);
-  $('btn-retry-result').addEventListener('click', startQuiz);
-  $('btn-back-result').addEventListener('click', () => {
+  $("btn-start-quiz").addEventListener("click", startQuiz);
+  $("btn-check").addEventListener("click", checkQuiz);
+  $("btn-retry").addEventListener("click", startQuiz);
+  $("btn-retry-result").addEventListener("click", startQuiz);
+  $("btn-back-result").addEventListener("click", () => {
     renderLibrary();
-    switchView('view-library');
+    switchView("view-library");
   });
 
   // OCR file handling
-  const dropZone = $('ocr-drop-zone');
-  const fileInput = $<HTMLInputElement>('ocr-file-input');
+  const dropZone = $("ocr-drop-zone");
+  const fileInput = $<HTMLInputElement>("ocr-file-input");
 
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', (e) => {
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
-    dropZone.classList.add('dragover');
+    dropZone.classList.add("dragover");
   });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', (e) => {
+  dropZone.addEventListener("dragleave", () =>
+    dropZone.classList.remove("dragover"),
+  );
+  dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
-    dropZone.classList.remove('dragover');
+    dropZone.classList.remove("dragover");
     const file = (e as DragEvent).dataTransfer?.files[0];
     if (file) handleOCRFile(file);
   });
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener("change", () => {
     if (fileInput.files?.[0]) handleOCRFile(fileInput.files[0]);
   });
 
   // Export / Import
-  $('btn-export').addEventListener('click', () => {
+  $("btn-export").addEventListener("click", () => {
     const algos = loadAlgorithms();
-    if (algos.length === 0) { alert('Nincs exportálható algoritmus.'); return; }
-    const blob = new Blob([JSON.stringify(algos, null, 2)], { type: 'application/json' });
+    if (algos.length === 0) {
+      alert("Nincs exportálható algoritmus.");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(algos, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'pracudo-algoritmusok.json';
+    a.download = "pracudo-algoritmusok.json";
     a.click();
     URL.revokeObjectURL(url);
   });
 
-  $('btn-import').addEventListener('click', () => {
-    $<HTMLInputElement>('import-file-input').click();
+  $("btn-import").addEventListener("click", () => {
+    $<HTMLInputElement>("import-file-input").click();
   });
 
-  $<HTMLInputElement>('import-file-input').addEventListener('change', (e) => {
+  $<HTMLInputElement>("import-file-input").addEventListener("change", (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const imported = JSON.parse(reader.result as string) as Algorithm[];
-        if (!Array.isArray(imported)) throw new Error('invalid');
+        if (!Array.isArray(imported)) throw new Error("invalid");
         const existing = loadAlgorithms();
         const existingIds = new Set(existing.map((a) => a.id));
         let added = 0;
@@ -716,44 +979,47 @@ function init() {
         alert(`${added} algoritmus importálva.`);
         renderLibrary();
       } catch {
-        alert('Hibás fájlformátum.');
+        alert("Hibás fájlformátum.");
       }
-      (e.target as HTMLInputElement).value = '';
+      (e.target as HTMLInputElement).value = "";
     };
     reader.readAsText(file);
   });
 
   // Settings
-  $('nav-settings').addEventListener('click', openSettings);
-  $('btn-settings-cancel').addEventListener('click', closeSettings);
-  $<HTMLDivElement>('modal-settings').addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).classList.contains('modal-overlay')) closeSettings();
+  $("nav-settings").addEventListener("click", openSettings);
+  $("btn-settings-cancel").addEventListener("click", closeSettings);
+  $<HTMLDivElement>("modal-settings").addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).classList.contains("modal-overlay"))
+      closeSettings();
   });
 
-  $('btn-settings-save').addEventListener('click', () => {
+  $("btn-settings-save").addEventListener("click", () => {
     saveAliases(readAliasTable());
     closeSettings();
   });
 
-  $('btn-alias-reset').addEventListener('click', () => {
+  $("btn-alias-reset").addEventListener("click", () => {
     resetAliases();
     renderAliasTable(getDefaultAliases());
   });
 
-  $('btn-stats-reset').addEventListener('click', () => {
-    if (confirm('Biztosan törlöd az összes statisztikát?')) {
+  $("btn-stats-reset").addEventListener("click", () => {
+    if (confirm("Biztosan törlöd az összes statisztikát?")) {
       resetStats();
     }
   });
 
-  $('btn-alias-add').addEventListener('click', () => {
+  $("btn-alias-add").addEventListener("click", () => {
     const current = readAliasTable();
-    current.push({ canonical: '', aliases: [''] });
+    current.push({ canonical: "", aliases: [""] });
     renderAliasTable(current);
   });
 
-  $('alias-table-container').addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.alias-remove') as HTMLElement | null;
+  $("alias-table-container").addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest(
+      ".alias-remove",
+    ) as HTMLElement | null;
     if (btn) {
       const current = readAliasTable();
       const idx = parseInt(btn.dataset.index!);
@@ -764,14 +1030,14 @@ function init() {
 }
 
 function showWelcome() {
-  const welcomeScreen = $('welcome-screen');
-  const nameInput = $<HTMLInputElement>('welcome-name');
-  const startBtn = $<HTMLButtonElement>('btn-welcome-start');
+  const welcomeScreen = $("welcome-screen");
+  const nameInput = $<HTMLInputElement>("welcome-name");
+  const startBtn = $<HTMLButtonElement>("btn-welcome-start");
 
-  welcomeScreen.style.display = 'flex';
-  $('app').style.display = 'none';
+  welcomeScreen.style.display = "flex";
+  $("app").style.display = "none";
 
-  nameInput.addEventListener('input', () => {
+  nameInput.addEventListener("input", () => {
     startBtn.disabled = nameInput.value.trim().length === 0;
   });
 
@@ -779,32 +1045,32 @@ function showWelcome() {
     const name = nameInput.value.trim();
     if (!name) return;
     setCurrentUser(name);
-    welcomeScreen.style.display = 'none';
-    $('app').style.display = '';
-    $('user-greeting').textContent = name;
+    welcomeScreen.style.display = "none";
+    $("app").style.display = "";
+    $("user-greeting").textContent = name;
     init();
   };
 
-  startBtn.addEventListener('click', enterApp);
-  nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') enterApp();
+  startBtn.addEventListener("click", enterApp);
+  nameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") enterApp();
   });
 
   nameInput.focus();
 }
 
 if (getCurrentUser()) {
-  $('welcome-screen').style.display = 'none';
-  $('app').style.display = '';
-  $('user-greeting').textContent = getCurrentUser();
+  $("welcome-screen").style.display = "none";
+  $("app").style.display = "";
+  $("user-greeting").textContent = getCurrentUser();
   init();
 } else {
   showWelcome();
 }
 
-$('user-greeting').addEventListener('click', () => {
-  if (confirm('Felhasználót váltasz? (A statisztikáid megmaradnak.)')) {
-    localStorage.removeItem('pracudo_user');
+$("user-greeting").addEventListener("click", () => {
+  if (confirm("Felhasználót váltasz? (A statisztikáid megmaradnak.)")) {
+    localStorage.removeItem("pracudo_user");
     location.reload();
   }
 });
