@@ -46,6 +46,13 @@ interface JumpInfo {
   loopStart?: number;
 }
 
+interface FunctionDef {
+  name: string;
+  start: number;
+  end: number;
+  params: InputParam[];
+}
+
 // ===== Expression Tokenizer =====
 
 interface ExprToken {
@@ -410,7 +417,7 @@ function classifyLine(raw: string): ClassifiedLine {
         const t = p.trim();
         if (!t) continue;
         const paramMatch = t.match(
-          /^([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*:\s*(.+)$/i,
+          /^(?:címszerint\s+)?([a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_][a-zA-ZáéíóöőúüűÁÉÍÓÖŐÚÜŰ_0-9]*)\s*:\s*(.+)$/i,
         );
         if (paramMatch) {
           const typeStr = paramMatch[2].trim();
@@ -656,6 +663,7 @@ export class Interpreter {
   private lines: PseudoLine[];
   private classified: ClassifiedLine[];
   private jumps: Map<number, JumpInfo>;
+  private functions: Map<string, FunctionDef>;
   private env: Map<string, Value>;
   private pc: number;
   private startPc: number;
@@ -673,6 +681,7 @@ export class Interpreter {
     this.lines = algo.lines;
     this.classified = algo.lines.map((l) => classifyLine(l.raw));
     this.jumps = buildJumpTable(this.classified);
+    this.functions = this.buildFunctionTable(this.classified);
     this.env = new Map();
     this.history = [];
     this.forState = new Map();
@@ -702,6 +711,67 @@ export class Interpreter {
       this.endPc = this.lines.length;
     }
     this.pc = this.startPc;
+  }
+
+  private buildFunctionTable(classified: ClassifiedLine[]): Map<string, FunctionDef> {
+    const functions = new Map<string, FunctionDef>();
+    const stack: Array<{ name: string; start: number; params: InputParam[] }> = [];
+
+    for (let i = 0; i < classified.length; i++) {
+      const cl = classified[i];
+      if (cl.kind === "func_header") {
+        stack.push({ name: cl.name, start: i + 1, params: cl.params });
+      } else if (cl.kind === "func_end") {
+        const entry = stack.pop();
+        if (entry) {
+          functions.set(entry.name.toUpperCase(), {
+            name: entry.name,
+            start: entry.start,
+            end: i,
+            params: entry.params,
+          });
+        }
+      }
+    }
+
+    return functions;
+  }
+
+  private callUserFunction(name: string, args: Value[]): Value {
+    const fn = this.functions.get(name.toUpperCase());
+    if (!fn) throw new Error(`Ismeretlen függvény: ${name}`);
+    if (args.length !== fn.params.length)
+      throw new Error(`Hibás paraméterszám: ${name} vár ${fn.params.length}-t`);
+
+    const savedEnv = this.env;
+    const savedPc = this.pc;
+    const savedEndPc = this.endPc;
+    const savedFinished = this._finished;
+    const savedReturnValue = this._returnValue;
+
+    this.env = new Map<string, Value>();
+    for (let i = 0; i < fn.params.length; i++) {
+      this.env.set(fn.params[i].name, args[i]);
+    }
+    this.pc = fn.start;
+    this.endPc = fn.end;
+    this._finished = false;
+    this._returnValue = null;
+
+    while (!this._finished && !this._error && this.pc < this.endPc) {
+      const cl = this.classified[this.pc];
+      this.executeLine(cl, this.pc);
+    }
+
+    const result = this._returnValue;
+
+    this.env = savedEnv;
+    this.pc = savedPc;
+    this.endPc = savedEndPc;
+    this._finished = savedFinished;
+    this._returnValue = savedReturnValue;
+
+    return result === null ? 0 : result;
   }
 
   setInputs(inputs: Record<string, Value>): void {
@@ -908,6 +978,11 @@ export class Interpreter {
           return "csere végrehajtva";
         }
         const argVals = cl.args.map((a) => this.evalExpr(a));
+        if (this.functions.has(cl.name.toUpperCase())) {
+          this.callUserFunction(cl.name, argVals);
+          this.pc++;
+          return `${cl.name}() végrehajtva`;
+        }
         this.pc++;
         return `${cl.name}(${argVals.map(formatValue).join(", ")})`;
       }
@@ -1072,8 +1147,13 @@ export class Interpreter {
       }
     }
 
-    // 2. BEÉPÍTETT FÜGGVÉNYEK
+    // 2. USER DEFINED FUNCTIONS
     const upper = name.toUpperCase();
+    if (this.functions.has(upper)) {
+      return this.callUserFunction(name, args);
+    }
+
+    // 3. BEÉPÍTETT FÜGGVÉNYEK
     if (upper === "MAX") return Math.max(asNumber(args[0]), asNumber(args[1]));
     if (upper === "MIN") return Math.min(asNumber(args[0]), asNumber(args[1]));
     if (upper === "ABS") return Math.abs(asNumber(args[0]));
